@@ -114,10 +114,6 @@ fn generate_expr_inner<R: Rng + ?Sized>(
                     depth - 1,
                     refs,
                 );
-                // Wrap binary sub-expressions in parentheses to preserve semantics
-                // when the expression is displayed as SQL and re-parsed.
-                // E.g., Unary(-, Binary(a, -, b)) means "-(a - b)" but without parens
-                // would display as "- a - b" which parses as "(-a) - b"
                 let inner = if matches!(inner, Expr::Binary(..)) {
                     Expr::Parenthesized(vec![Box::new(inner)])
                 } else {
