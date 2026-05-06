@@ -53,7 +53,6 @@ impl Table {
         if opts.generated_columns.enable && columns.len() >= 2 {
             let gen_opts = &opts.generated_columns;
 
-            //TODO find a better algorithm for incremental cycle detection
             // Track dependencies between columns: col_idx -> set of column indices it references
             let mut dependencies: HashMap<usize, HashSet<usize>> = HashMap::new();
 
