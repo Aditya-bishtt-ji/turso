@@ -77,11 +77,11 @@ impl Property {
                     // full_row has its generated columns evaluated
                     let full_row = match insert {
                         Insert::ValuesWithColumns { columns, .. } => {
-                            //TODO could we encode the two types of rows and the transition
-                            // in the type system?
                             expand_with_generated_columns(table, Some(columns), partial_row)
                         }
-                        Insert::Values { .. } => expand_with_generated_columns(table, None, partial_row),
+                        Insert::Values { .. } => {
+                            expand_with_generated_columns(table, None, partial_row)
+                        }
                         _ => unreachable!(),
                     };
 
@@ -194,10 +194,7 @@ impl Property {
                             // against the predicate, so conservatively reject all ValuesWithColumns.
                             None
                         }
-                        Query::Insert(Insert::Select {
-                            table: t,
-                            select: _,
-                        }) if t == &table.name => {
+                        Query::Insert(Insert::Select { table: t, .. }) if t == &table.name => {
                             // A row that holds for the predicate will not be inserted.
                             None
                         }

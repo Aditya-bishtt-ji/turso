@@ -11,7 +11,8 @@ use crate::model::query::select::{
 };
 use crate::model::query::update::{SetValue, Update};
 use crate::model::query::{
-    Create, CreateIndex, Delete, Drop, DropIndex, Insert, OnConflict, Select, UpdateSetItem,
+    Create, CreateIndex, Delete, Drop, DropIndex, Insert, InsertColumns, OnConflict, Select,
+    UpdateSetItem,
 };
 use crate::model::table::{
     Column, ColumnType, Index, JoinType, JoinedTable, Name, SimValue, Table, TableContext,
@@ -263,21 +264,40 @@ impl Arbitrary for Insert {
             non_unique.first()?;
             let table = *pick(&non_unique, rng);
 
-            //TODO fix this, it means that if there's 10 cols per table, there's a very tiny chance
-            // of actually using this statement shape. Instead, we should intelligently SELECT into
-            // only the non-generated columns.
-            // Skip tables with generated columns - INSERT INTO ... SELECT * doesn't work
-            // because SELECT * includes generated columns which can't be inserted
-            if table.columns.iter().any(|c| c.is_generated()) {
-                return None;
-            }
+            // For tables with generated columns, project only the non-generated columns
+            // and emit `INSERT INTO t (cols) SELECT cols ...`. SELECT * would include the
+            // generated columns, which can't be inserted into.
+            let non_generated: Vec<&str> = table
+                .columns
+                .iter()
+                .filter(|c| !c.is_generated())
+                .map(|c| c.name.as_str())
+                .collect();
+            let has_generated = non_generated.len() < table.columns.len();
+            let result_columns: Vec<ResultColumn> = if has_generated {
+                non_generated
+                    .iter()
+                    .map(|n| ResultColumn::Column((*n).to_string()))
+                    .collect()
+            } else {
+                vec![ResultColumn::Star]
+            };
+            // lazy heuristic, could be improved
+            let insert_columns = if has_generated {
+                InsertColumns::Explicit(non_generated.iter().map(|n| (*n).to_string()).collect())
+            } else {
+                InsertColumns::Implicit
+            };
 
             const MAX_SELF_INSERT_DEPTH: i32 = 5;
             let nesting_depth = rng.random_range(1..=MAX_SELF_INSERT_DEPTH);
 
-            let mut select = Select::simple(
+            let mut select = Select::single(
                 table.name.clone(),
+                result_columns,
                 Predicate::arbitrary_from(rng, env, table),
+                None,
+                Distinctness::All,
             );
 
             for _ in 1..nesting_depth {
@@ -301,28 +321,53 @@ impl Arbitrary for Insert {
 
             Some(Insert::Select {
                 table: table.name.clone(),
+                columns: insert_columns,
                 select: Box::new(select),
             })
         };
 
         let gen_select = |rng: &mut R| {
-            //TODO see comment at line 266, we need to be able to use tables with generated columns
-            // Find a non-empty, not-too-large table without UNIQUE or generated columns
-            // INSERT INTO ... SELECT * doesn't work with generated columns
+            // Find a non-empty, not-too-large table without UNIQUE columns. Tables with
+            // generated columns are fine: we project only the non-generated columns and
+            // emit `INSERT INTO t (cols) SELECT cols ...`.
             let max_rows = insert_opts.max_rows.get() as usize;
             let select_table = env.tables().iter().find(|t| {
-                !t.rows.is_empty()
-                    && !t.has_any_unique_column()
-                    && t.rows.len() <= max_rows
-                    && !t.columns.iter().any(|c| c.is_generated())
+                !t.rows.is_empty() && !t.has_any_unique_column() && t.rows.len() <= max_rows
             })?;
             let row = pick(&select_table.rows, rng);
             let predicate = Predicate::arbitrary_from(rng, env, (select_table, row));
+
+            let non_generated: Vec<&str> = select_table
+                .columns
+                .iter()
+                .filter(|c| !c.is_generated())
+                .map(|c| c.name.as_str())
+                .collect();
+            let has_generated = non_generated.len() < select_table.columns.len();
+            let (result_columns, insert_columns) = if has_generated {
+                let cols: Vec<String> = non_generated.iter().map(|n| (*n).to_string()).collect();
+                (
+                    cols.iter()
+                        .map(|n| ResultColumn::Column(n.clone()))
+                        .collect(),
+                    InsertColumns::Explicit(cols),
+                )
+            } else {
+                (vec![ResultColumn::Star], InsertColumns::Implicit)
+            };
+
             // TODO change for arbitrary_sized and insert from arbitrary tables
             // Build a SELECT from the same table to ensure schema matches for INSERT INTO ... SELECT
-            let select = Select::simple(select_table.name.clone(), predicate);
+            let select = Select::single(
+                select_table.name.clone(),
+                result_columns,
+                predicate,
+                None,
+                Distinctness::All,
+            );
             Some(Insert::Select {
                 table: select_table.name.clone(),
+                columns: insert_columns,
                 select: Box::new(select),
             })
         };

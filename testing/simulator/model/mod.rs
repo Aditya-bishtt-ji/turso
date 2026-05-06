@@ -9,7 +9,7 @@ use sql_generation::model::query::predicate::expr_to_value;
 use sql_generation::model::query::select::SelectTable;
 use sql_generation::model::{
     query::{
-        Create, CreateIndex, Delete, Drop, DropIndex, Insert, Select,
+        Create, CreateIndex, Delete, Drop, DropIndex, Insert, InsertColumns, Select,
         alter_table::{AlterTable, AlterTableType},
         pragma::Pragma,
         select::{CompoundOperator, FromClause, ResultColumn, SelectInner},
@@ -642,6 +642,8 @@ impl Shadow for Drop {
     }
 }
 
+// TODO having &[SimValue] sometimes be expanded, and sometimes not (with NULL placeholders) is
+// error-prone. To make this type-safe, we should have domain types for expanded and non-expanded rows.
 /// Expand a partial row to a full row, by evaluating generated column expressions.
 pub(crate) fn expand_with_generated_columns(
     table: &Table,
@@ -687,7 +689,11 @@ impl Shadow for Insert {
     //FIXME this doesn't handle type affinity
     fn shadow(&self, tables: &mut ShadowTablesMut) -> Self::Result {
         match self {
-            Insert::Select { table, select } => {
+            Insert::Select {
+                table,
+                select,
+                ..
+            } => {
                 let table_name = table.clone();
                 let raw_rows = select.shadow(tables)?;
 

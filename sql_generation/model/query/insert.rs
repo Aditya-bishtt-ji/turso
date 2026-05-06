@@ -34,8 +34,20 @@ pub enum Insert {
     },
     Select {
         table: String,
+        #[serde(default)]
+        columns: InsertColumns,
         select: Box<Select>,
     },
+}
+
+/// Whether an INSERT specifies an explicit column list.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub enum InsertColumns {
+    /// No column list (`INSERT INTO t ...`).
+    #[default]
+    Implicit,
+    /// Explicit column list (`INSERT INTO t (a, b, c...) ...`)
+    Explicit(Vec<String>),
 }
 
 impl Insert {
@@ -110,8 +122,22 @@ impl Display for Insert {
                 }
                 Ok(())
             }
-            Insert::Select { table, select } => {
+            Insert::Select {
+                table,
+                columns,
+                select,
+            } => {
                 write!(f, "INSERT INTO {table} ")?;
+                if let InsertColumns::Explicit(columns) = columns {
+                    write!(f, "(")?;
+                    for (i, col) in columns.iter().enumerate() {
+                        if i != 0 {
+                            write!(f, ", ")?;
+                        }
+                        write!(f, "{col}")?;
+                    }
+                    write!(f, ") ")?;
+                }
                 write!(f, "{select}")
             }
         }
