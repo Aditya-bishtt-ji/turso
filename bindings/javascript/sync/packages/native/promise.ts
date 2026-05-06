@@ -281,12 +281,14 @@ class Database extends DatabasePromise {
         const properties = {
             default: { value: wrapTxn("") },
             deferred: { value: wrapTxn("DEFERRED") },
+            concurrent: { value: wrapTxn("CONCURRENT") },
             immediate: { value: wrapTxn("IMMEDIATE") },
             exclusive: { value: wrapTxn("EXCLUSIVE") },
             database: { value: this, enumerable: true },
         };
         Object.defineProperties(properties.default.value, properties);
         Object.defineProperties(properties.deferred.value, properties);
+        Object.defineProperties(properties.concurrent.value, properties);
         Object.defineProperties(properties.immediate.value, properties);
         Object.defineProperties(properties.exclusive.value, properties);
         return properties.default.value;
